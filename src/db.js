@@ -1,23 +1,18 @@
-require('dotenv').config();
+// src/db.js
 const { Pool } = require('pg');
-const pino = require('pino');
-const logger = pino();
 const pool = new Pool({
-  connectionString: process.env.NEON_DATABASE_URL,
-  max: 5,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000
+  connectionString: process.env.DATABASE_URL, // set env
+  // for neon? ensure ssl on, depending on provider
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
 });
-pool.on('error', (err) => { logger.error({ err }, 'Unexpected Postgres error'); });
+
 async function query(text, params) {
   const start = Date.now();
-  try {
-    const res = await pool.query(text, params);
-    logger.info({ text, duration: Date.now() - start }, 'db query');
-    return res;
-  } catch (err) {
-    logger.error({ err, text }, 'db query failed');
-    throw err;
-  }
+  const res = await pool.query(text, params);
+  const duration = Date.now() - start;
+  // optional console log
+  // console.log('Executed query', { text, duration });
+  return res;
 }
-module.exports = { pool, query };
+
+module.exports = { query, pool };
