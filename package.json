@@ -2,21 +2,24 @@
   "name": "sr-bot-dev-free-tier-v5",
   "version": "1.0.0",
   "main": "src/server.js",
+  "license": "MIT",
+  "type": "commonjs",
   "scripts": {
-    "start": "node src/server.js",
-    "admin:init": "node src/admin-init.js"
+    "start": "node src/server.js"
   },
-"dependencies": {
-  "express": "^4.19.2",
-  "body-parser": "^1.20.2",
-  "helmet": "^7.0.0",
-  "pino": "^8.17.0",
-  "pg": "^8.11.3",
-  "bcrypt": "^5.1.1",
-  "express-rate-limit": "^7.0.0",
-  "baileys": "^6.7.5",
-  "qrcode": "^1.5.3",
-  "dotenv": "^16.4.5",
-  "uuid": "^9.0.1"
-}
+  "dependencies": {
+    "express": "^4.19.2",
+    "body-parser": "^1.20.2",
+    "helmet": "^7.0.0",
+    "dotenv": "^16.4.5",
+    "pino": "^8.17.0",
+    "pg": "^8.11.3",
+    "bcrypt": "^5.1.1",
+
+    "express-rate-limit": "^7.1.0",
+
+    "baileys": "^6.7.5",
+    "qrcode": "^1.5.3",
+    "uuid": "^9.0.1"
+  }
 }
