@@ -1,118 +1,112 @@
-// src/whatsapp.js
-const fs = require('fs');
-const path = require('path');
-const qrcode = require('qrcode');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('baileys');
-const pino = require('pino');
-const logger = pino({ level: 'silent' });
+/* src/whatsapp.js — FINAL STABLE VERSION */
 
-let _sock = null;
-let _reconnectTimer = null;
-let _backoff = 2000;
+const fs = require("fs");
+const path = require("path");
+const QRCode = require("qrcode");
+const pino = require("pino");
+
+const {
+    default: makeWASocket,
+    useMultiFileAuthState,
+    Browsers,
+    DisconnectReason
+} = require("@whiskeysockets/baileys");
+
+const logger = pino({ level: "silent" });
+
+const AUTH_DIR = path.join(__dirname, "..", "auth_info");
+const PUBLIC_DIR = path.join(__dirname, "..", "public");
+const QR_TXT = path.join(PUBLIC_DIR, "latest_qr.txt");
+const QR_PNG = path.join(PUBLIC_DIR, "latest_qr.png");
+
+// Ensure folders exist
+if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
+if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+
+let sock = null;
+let reconnecting = false;
 
 async function startWhatsApp(onMessage) {
-  // agar socket already active ho to wapas return
-  if (_sock && !_sock.destroyed) return _sock;
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
-  const authDir = path.join(__dirname, '..', 'whatsapp_auth');
-  try { if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true }); } catch(e){}
+        sock = makeWASocket({
+            auth: state,
+            logger,
+            printQRInTerminal: false,
+            browser: Browsers.macOS("Desktop"), // safest browser
+            syncFullHistory: false
+        });
 
-  try {
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+        // Save updated creds
+        sock.ev.on("creds.update", saveCreds);
 
-    const sock = makeWASocket({
-      printQRInTerminal: false,
-      auth: state,
-      logger,
-      browser: Browsers.macOS('Safari'),
-      // optional: fixed version tuple, change if Whatsapp changes
-      version: [2, 2302, 8]
-    });
+        // Connection update handler
+        sock.ev.on("connection.update", async (update) => {
+            const { connection, qr, lastDisconnect } = update;
 
-    _sock = sock;
+            if (qr) {
+                fs.writeFileSync(QR_TXT, qr);
+                try {
+                    await QRCode.toFile(QR_PNG, qr);
+                } catch (e) {
+                    console.log("QR PNG failed:", e);
+                }
+                console.log("📲 New QR generated");
+            }
 
-    // save creds when updated
-    sock.ev.on('creds.update', async () => {
-      try { await saveCreds(); console.log('Creds saved'); } catch (e) { console.error('saveCreds fail', e); }
-    });
+            if (connection === "open") {
+                console.log("✅ WhatsApp Connected");
+            }
 
-    // connection updates (QR, open, close...)
-    sock.ev.on('connection.update', async (update) => {
-      try {
-        const { connection, lastDisconnect, qr } = update;
+            if (connection === "close") {
+                const reason = lastDisconnect?.error?.output?.statusCode;
+                console.log("❌ WA Closed:", reason);
 
-        // QR handling: write txt + png to public/
-        if (qr) {
-          try {
-            const txtPath = path.join(__dirname, '..', 'public', 'latest_qr.txt');
-            const pngPath = path.join(__dirname, '..', 'public', 'latest_qr.png');
-            fs.mkdirSync(path.dirname(txtPath), { recursive: true });
-            fs.writeFileSync(txtPath, qr, 'utf8');
-            qrcode.toFile(pngPath, qr, { width: 400 })
-              .then(()=> console.log('QR PNG saved'))
-              .catch(err => console.error('QR PNG error', err));
-            console.log('QR text saved.');
-          } catch (e) { console.error('QR write error', e); }
-        }
+                // Logged-out → clear session + restart
+                if (reason === DisconnectReason.loggedOut || reason === 401) {
+                    console.log("⚠ Session expired. Resetting...");
+                    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+                    return startWhatsApp(onMessage);
+                }
 
-        if (connection === 'open') {
-          console.log('WhatsApp connected!');
-          // remove QR files after success so /qr endpoint empty
-          try { fs.unlinkSync(path.join(__dirname, '..', 'public', 'latest_qr.txt')); } catch(e){}
-          try { fs.unlinkSync(path.join(__dirname, '..', 'public', 'latest_qr.png')); } catch(e){}
-          _backoff = 2000;
-          if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
-        }
+                // Render sleep fix — Prevent repeat loops
+                if (!reconnecting) {
+                    reconnecting = true;
+                    console.log("🔁 Reconnecting in 4 seconds…");
+                    setTimeout(() => {
+                        reconnecting = false;
+                        startWhatsApp(onMessage);
+                    }, 4000);
+                }
+            }
+        });
 
-        if (connection === 'close') {
-          const code = lastDisconnect?.error?.output?.statusCode;
-          console.log('Connection closed, reason code:', code);
+        // Handle incoming messages
+        sock.ev.on("messages.upsert", async ({ messages }) => {
+            const msg = messages[0];
+            if (!msg?.message) return;
 
-          // agar logged out, clear auth so fresh QR generated
-          if (code === DisconnectReason.loggedOut) {
-            console.log('Detected loggedOut — clearing auth dir.');
-            try { fs.rmSync(authDir, { recursive: true, force: true }); } catch(e){}
-            try { fs.unlinkSync(path.join(__dirname, '..', 'public', 'latest_qr.txt')); } catch(e){}
-            try { fs.unlinkSync(path.join(__dirname, '..', 'public', 'latest_qr.png')); } catch(e){}
-            _backoff = 2000;
-          }
+            const from = msg.key.remoteJid;
+            const text =
+                msg.message.conversation ||
+                msg.message.extendedTextMessage?.text ||
+                msg.message?.templateButtonReplyMessage?.selectedDisplayText ||
+                "";
 
-          // schedule reconnect with exponential backoff (cap 60s)
-          const delay = Math.min(_backoff, 60_000);
-          console.log(`Reconnecting WhatsApp in ${delay} ms`);
-          if (_reconnectTimer) clearTimeout(_reconnectTimer);
-          _reconnectTimer = setTimeout(() => {
-            _reconnectTimer = null;
-            _sock = null;
-            startWhatsApp(onMessage).catch(err => console.error('reconnect failed', err));
-          }, delay);
-          _backoff = Math.min(Math.floor(_backoff * 1.8), 60_000);
-        }
-      } catch (err) { console.error('connection.update handler error', err); }
-    });
+            try {
+                await onMessage({ from, text, raw: msg, sock });
+            } catch (e) {
+                console.log("❌ onMessage error:", e);
+            }
+        });
 
-    // messages handler
-    sock.ev.on('messages.upsert', async (m) => {
-      try {
-        const msg = m.messages?.[0];
-        if (!msg) return;
-        if (msg.key?.fromMe) return;
-        const from = msg.key.remoteJid;
-        const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-        try { await onMessage({ from, text, raw: msg, sock }); } catch(e){ console.error('onMessage error', e); }
-      } catch (e) { console.error('messages.upsert error', e); }
-    });
-
-    return sock;
-  } catch (err) {
-    console.error('startWhatsApp error', err);
-    const delay = Math.min(_backoff, 60_000);
-    setTimeout(() => {
-      _backoff = Math.min(Math.floor(_backoff * 1.8), 60_000);
-      startWhatsApp(onMessage).catch(e => console.error('retry startWhatsApp error', e));
-    }, delay);
-    throw err;
-  }
+        return sock;
+    } catch (err) {
+        console.log("WHATSAPP INIT ERROR:", err);
+        console.log("Restarting in 5 seconds...");
+        setTimeout(() => startWhatsApp(onMessage), 5000);
+    }
 }
 
 module.exports = { startWhatsApp };
