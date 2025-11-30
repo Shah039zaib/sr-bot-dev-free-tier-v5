@@ -1,6 +1,8 @@
-const { query } = require("./db");
+// src/db-init.js
+const { query } = require('./db');
 
-const SCHEMA = `
+async function autoMigrate() {
+  const sql = `
 CREATE TABLE IF NOT EXISTS sessions (
   name TEXT PRIMARY KEY,
   data JSONB NOT NULL,
@@ -20,6 +22,7 @@ CREATE TABLE IF NOT EXISTS messages (
   conversation_id BIGINT REFERENCES conversations(id),
   direction TEXT NOT NULL,
   message_text TEXT NOT NULL,
+  meta JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
@@ -49,15 +52,8 @@ CREATE TABLE IF NOT EXISTS admin_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 `;
-
-async function autoMigrate() {
-  try {
-    console.log("⚙ Running auto-migrations…");
-    await query(SCHEMA);
-    console.log("✅ Auto-migrations completed.");
-  } catch (err) {
-    console.error("❌ Auto-migration failed:", err);
-  }
+  await query(sql);
+  console.log('✅ Auto-migrations completed.');
 }
 
 module.exports = { autoMigrate };
