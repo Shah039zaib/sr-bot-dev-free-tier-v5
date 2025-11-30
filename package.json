@@ -8,13 +8,13 @@
     "seed-admin": "node scripts/seed_admin.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.6.0",
+    "@whiskeysockets/baileys": "6.17.16",
     "express": "^4.18.2",
     "pg": "^8.11.0",
     "dotenv": "^16.1.4",
     "pino": "^8.16.0",
     "body-parser": "^1.20.2",
-    "node-fetch": "^3.4.1",
+    "node-fetch": "2.6.7",
     "bcrypt": "^5.1.0",
     "jsonwebtoken": "^9.0.0",
     "express-jwt": "^7.7.8",
