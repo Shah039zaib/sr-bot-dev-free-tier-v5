@@ -17,6 +17,7 @@
     "bcrypt": "^5.1.1",
 
     "express-rate-limit": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
 
     "baileys": "^6.7.5",
     "qrcode": "^1.5.3",
