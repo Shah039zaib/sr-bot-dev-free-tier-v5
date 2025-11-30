@@ -1,13 +1,12 @@
-/* src/server.js — FINAL PRODUCTION VERSION */
+/* src/server.js — FINAL FIXED VERSION */
 
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const bodyParser = require("body-parser");
 const rateLimiter = require("./middleware/rateLimiter");
 const { startWhatsApp } = require("./whatsapp");
-const adminRoutes = require("./admin-routes");
-const bodyParser = require("body-parser");
 
 const app = express();
 
@@ -17,53 +16,43 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(rateLimiter);
 
-// Serve public folder for QR
+// Serve public QR folder
 app.use("/public", express.static(path.join(__dirname, "..", "public")));
 
-// Admin panel routes
-app.use("/admin", adminRoutes);
-
-// Healthcheck
+// Test route
 app.get("/", (req, res) => {
-  res.send("🚀 SR BOT DEV FREE TIER — Running Successfully");
+  res.send("🚀 SR BOT FREE TIER — Running Successfully");
 });
 
-// QR endpoint
+// Get latest QR
 app.get("/qr", (req, res) => {
-  try {
-    const qrFile = path.join(__dirname, "..", "public", "latest_qr.png");
-
-    if (!require("fs").existsSync(qrFile)) {
-      return res.json({
-        status: false,
-        message: "QR not generated yet or already scanned."
-      });
-    }
-
-    res.sendFile(qrFile);
-  } catch (e) {
-    res.status(500).json({ status: false, error: e.message });
+  const qrPath = path.join(__dirname, "..", "public", "latest_qr.png");
+  if (!require("fs").existsSync(qrPath)) {
+    return res.json({
+      status: false,
+      message: "QR not generated yet or already scanned."
+    });
   }
+  res.sendFile(qrPath);
 });
 
 // WhatsApp message handler
 async function handleIncoming({ from, text, raw, sock }) {
-  console.log("Incoming:", from, "->", text);
+  console.log("Incoming =>", from, ":", text);
 
-  // Test reply
   try {
     await sock.sendMessage(from, { text: `Auto Reply: ${text}` });
   } catch (e) {
-    console.log("Reply error:", e);
+    console.log("Send error:", e);
   }
 }
 
 // Start WhatsApp
 startWhatsApp(handleIncoming);
 
-// Dynamic PORT for Render
+// Dynamic PORT (Render requirement)
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🌐 Server running on port ${PORT}`);
+  console.log(`🌍 Server running on port ${PORT}`);
 });
